@@ -54,7 +54,12 @@ agentloom/
 ├── backend/          FastAPI 服务（唯一后端进程）
 │   ├── app/
 │   │   ├── core/     配置、错误码、日志、trace_id —— 不依赖任何业务
+│   │   ├── events/   六类事件 schema（A03）
 │   │   ├── api/      路由层，只做协议转换
+│   │   │   ├── deps.py     共享依赖：Settings、trace_id、错误响应声明
+│   │   │   ├── handlers.py 异常处理器：AppError / 校验失败 / HTTP / 兜底
+│   │   │   ├── ops.py      运维接口 /health /version
+│   │   │   └── v1/         业务接口，一律挂 /api/v1 前缀
 │   │   └── main.py   应用装配：中间件、异常处理、生命周期
 │   ├── Dockerfile    镜像定义（放在这里，让 build context 与它同目录）
 │   └── pyproject.toml  依赖 / ruff / mypy / pytest 全部集中在这里
@@ -129,6 +134,10 @@ make down         # 停容器，保留数据卷
   不允许裸 `HTTPException(500)`。
 - **每个请求都有 trace_id**：客户端可传 `X-Trace-Id`，不传则服务生成，并回写到响应头；
   日志格式里带该字段，出问题能一句话定位。
+- **路由分两层**：运维接口（`/health`、`/version`）不带版本前缀，业务接口一律在 `/api/v1`
+  之下。这样部署探针不会随 API 版本升级失效，业务接口又能整体演进。
+- **每个接口都在 OpenAPI 里声明错误响应**（`responses=ERROR_RESPONSES`），前端照契约接，
+  不用猜失败时长什么样。有条测试逐个路由检查这一点。
 - **ruff 与 mypy 都是 strict**，`pytest` 把 warning 当错误（`filterwarnings = error`）。
   这些不是为了好看，是为了让「坏掉的代码提交不进来」。
 
@@ -146,7 +155,7 @@ make down         # 停容器，保留数据卷
 
 | 阶段 | 内容 | 状态 |
 | --- | --- | --- |
-| P0 | 环境与骨架（A01 仓库结构 + 工具链 · A02 Docker Compose 全栈） | 已完成 |
+| P0 | 环境与骨架（A01 仓库结构 + 工具链 · A02 Docker Compose 全栈 · A03 事件 schema · A04 路由分层与错误处理） | 已完成 |
 | P1 | 事件模型与持久化 | 待开始 |
 | … | 详见 [docs/排期表_A_agentloom.xlsx](docs/排期表_A_agentloom.xlsx) | |
 
