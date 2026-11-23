@@ -27,8 +27,11 @@
 
 - Python：`D:\dsh-data\dsh-runtimes\dsh-primary-runtime\dependencies\python\python.exe`（3.12.14）
 - Node v24.16.0；pnpm 在 `D:\node_global\pnpm.cmd`
-- **本机没有 GNU make**（PATH / Git / Chocolatey / Winget 均无）→ 采用 `Makefile` + `make.ps1` 双入口
-- PowerShell 执行策略限制 `npm.ps1` → 走 `npm.cmd`
+- **本机没有 GNU make**（PATH / Git / Chocolatey / Winget 均无）→ 采用 `Makefile` + `make.ps1` + `make.cmd` 三件套
+- **只有 Windows PowerShell 5.1**（`C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe`），**没有 pwsh 7**
+- PowerShell 执行策略全 Undefined → 跑本地脚本要 `-ExecutionPolicy Bypass`
+- PowerShell 5.1 **无 BOM 时按 ANSI 代码页解析脚本**，中文会解成乱码引发语法错误 → `make.ps1` 必须存成 UTF-8 **with BOM**（`.gitattributes` 里已标 `make.ps1 -text` 防止转换）
+- `npm.ps1` 被执行策略禁用 → 走 `npm.cmd`
 - 非管理员，不能用 Chocolatey 装系统级工具
 
 ## 常用命令
@@ -37,10 +40,21 @@
 # Linux / CI / Docker 内
 make lint && make test
 
-# Windows（本机）
-pwsh -File make.ps1 lint
-pwsh -File make.ps1 test
+# Windows（本机，在仓库根目录）
+make lint          :: make.cmd 转发到 make.ps1，目标名与 Makefile 一致
+make test
+make check         :: lint + typecheck + test
+# 或直接：
+powershell -NoProfile -ExecutionPolicy Bypass -File make.ps1 check
 ```
+
+## 踩坑记录
+
+- **`uvicorn app.main:app` 需要模块级 `app`**：只暴露 `create_app()` 工厂时，单测全绿但服务起不来
+  （`Attribute "app" not found in module "app.main"`）。已在 `app/main.py` 末尾加 `app = create_app()`，
+  并补了回归测试 `test_module_level_asgi_app_exists`。
+- **starlette 1.10 的 TestClient 首选 `httpx2`**，缺失时回落 `httpx` 并发 `StarletteDeprecationWarning`；
+  项目 `filterwarnings = ["error"]` 会把它变成错误。`httpx2>=2.16,<3.0` 已加入 dev 依赖。
 
 ## 待办 / 开放问题
 
