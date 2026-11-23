@@ -1,0 +1,43 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# ---- Node ----
+node_modules/
+dist/
+dist-ssr/
+*.local
+.vite/
+.pnpm-store/
+
+# ---- 环境与密钥 ----
+.env
+.env.*
+!.env.example
+
+# ---- 运行产物 ----
+*.log
+logs/
+traces/
+*.jsonl
+!docs/**/*.jsonl
+
+# ---- 编辑器 / 系统 ----
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+
+# ---- Office 临时/锁文件（docs/ 下的排期表） ----
+~$*

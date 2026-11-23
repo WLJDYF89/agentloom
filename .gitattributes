@@ -1,0 +1,19 @@
+# 统一行尾，避免 Windows 检出把脚本改成 CRLF 后到处是 diff。
+* text=auto eol=lf
+
+# cmd.exe 用 CRLF 最稳妥
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# 二进制资源不做任何转换
+*.xlsx binary
+*.xls binary
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+
+# make.ps1 需要保持 UTF-8 with BOM（PowerShell 5.1 靠 BOM 判定编码），
+# 所以不让 git 对它做任何文本处理。
+make.ps1 -text
