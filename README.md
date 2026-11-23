@@ -62,7 +62,6 @@ agentloom/
 ├── deploy/           Docker Compose 与镜像定义（A02 起）
 ├── docs/             排期表、事件模型、设计文档
 ├── scripts/          运维 / 数据生成 / 故障注入脚本
-├── .memory/          项目记忆（决策、踩坑、进度）
 ├── Makefile          标准入口（Linux / macOS / CI / 容器内）
 ├── make.ps1          Windows 等价入口（目标一一对应）
 └── make.cmd          Windows 短命令：make lint
@@ -136,4 +135,5 @@ OpenAPI 文档在 <http://127.0.0.1:8000/docs>。
 | P1 | 事件模型与持久化 | 待开始 |
 | … | 详见 [docs/排期表_A_agentloom.xlsx](docs/排期表_A_agentloom.xlsx) | |
 
-本项目在 `.memory/` 下按天记录决策与踩坑，改动前先读。
+项目范围与边界、和 LangGraph / Temporal 的差异、待验证的指标口径，写在
+[docs/项目定位.md](docs/项目定位.md)。
