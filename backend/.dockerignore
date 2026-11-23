@@ -1,0 +1,46 @@
+# backend/.dockerignore —— 构建上下文过滤
+#
+# compose 里 build.context 指向 backend/，所以这份文件必须放在 backend/ 下。
+# 没有它，backend/.venv（Windows 下几百 MB、且是 Windows 二进制）会被整体
+# COPY 进 Linux 镜像，镜像体积暴涨且毫无用处。
+#
+# 语法与 .gitignore 一致，路径相对构建上下文根（即 backend/）。
+
+# ---- Python 虚拟环境与缓存 ----
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
+dist/
+
+# ---- 测试与工具缓存 ----
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# ---- 本地配置与密钥 ----
+.env
+.env.*
+!.env.example
+
+# ---- 编辑器与系统 ----
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# ---- 版本控制 ----
+.git/
+.gitignore
+
+# ---- 文档与杂项（镜像里不需要）----
+*.md
+!README.md

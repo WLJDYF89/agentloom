@@ -1,0 +1,90 @@
+# deploy/docker-compose.yml —— agentloom 全栈编排
+#
+# 用法（推荐从仓库根目录）：
+#   make up        # 起全栈并等到健康，返回 0 即代表全绿
+#   make down      # 停掉并删除容器（保留数据卷）
+#   make logs      # 跟随日志
+#
+# 等价手写命令：
+#   docker compose -f deploy/docker-compose.yml up -d --wait
+#
+# 注意 `--wait`：不加它 `up -d` 会立刻返回 0，哪怕容器两秒后就崩了；
+# 加了它，命令返回 0 就等于所有 healthcheck 都已通过。这才是
+# 「一条 make up 能起全栈」的验收口径。
+
+# 显式指定 project 名。不写的话 Compose 会用 compose 文件所在目录名
+# （也就是 "deploy"）当 project 名，容器会叫 deploy-backend-1 这种，
+# 与项目名对不上，且和别的目录里的 deploy 冲突。
+name: agentloom
+
+services:
+  # ---------- PostgreSQL ----------
+  postgres:
+    image: postgres:16
+    container_name: agentloom-postgres
+    environment:
+      # 用 ${VAR:-默认值} 而不是 ${VAR}：没有 .env 时也能起来。
+      # 想改密码就在仓库根或 deploy/ 放一个 .env（已被 .gitignore 忽略）。
+      POSTGRES_USER: ${POSTGRES_USER:-agentloom}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agentloom}
+      POSTGRES_DB: ${POSTGRES_DB:-agentloom}
+      # 让容器内时间与数据排序稳定；事件时间戳一致性靠 UTC 存、展示时转换。
+      TZ: ${TZ:-Asia/Shanghai}
+      PGTZ: UTC
+    ports:
+      # 宿主 5432 —— 给宿主机上的本地开发（make run）连用。
+      # 注意这行意味着宿主机 5432 被占用；本机已有别的 postgres 时改左边。
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      # 命名卷，不绑定 Windows 路径。
+      # 绑 Windows 目录到 /var/lib/postgresql/data 会因权限与大小写不敏感
+      # 导致 initdb 失败，这是 Windows + Docker 的经典坑。
+      - pgdata:/var/lib/postgresql/data
+      # 初始化脚本：仅在数据目录为空的**第一次**启动时执行。
+      # 路径相对本文件（deploy/），只读挂载。
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-agentloom} -d $${POSTGRES_DB:-agentloom}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  # ---------- 后端应用 ----------
+  backend:
+    build:
+      # context 相对本文件（deploy/），指向 backend/
+      context: ../backend
+      # dockerfile 相对 **context**（不是相对本文件），所以这里就是 Dockerfile
+      dockerfile: Dockerfile
+    image: agentloom-backend:dev
+    container_name: agentloom-backend
+    environment:
+      AGENTLOOM_ENVIRONMENT: ${AGENTLOOM_ENVIRONMENT:-local}
+      AGENTLOOM_LOG_LEVEL: ${AGENTLOOM_LOG_LEVEL:-INFO}
+      AGENTLOOM_LOG_JSON: ${AGENTLOOM_LOG_JSON:-false}
+      AGENTLOOM_HOST: 0.0.0.0
+      AGENTLOOM_PORT: 8000
+      # 关键：容器内的 host 必须写服务名 postgres，不能写 localhost。
+      # 容器里的 localhost 指容器自己。宿主机本地开发用 .env.example 里
+      # 那份 localhost 的地址，两份不共用同一个值。
+      AGENTLOOM_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-agentloom}:${POSTGRES_PASSWORD:-agentloom}@postgres:5432/${POSTGRES_DB:-agentloom}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        # 等 postgres 真的 healthy 再起 backend，不是"启动了"就算。
+        # A02 阶段 backend 其实还没连库（pyproject 里没有 asyncpg，
+        # lifespan 里也没有连接池），这条依赖是为 A05 铺路的；
+        # 现在留着的好处是 make up 通过 = 数据库镜像本身也验证过了。
+        condition: service_healthy
+    # healthcheck 定义在 backend/Dockerfile 里（镜像级），这里不重复写，
+    # 避免两处定义漂移。compose --wait 会读取容器 health 状态，镜像级
+    # HEALTHCHECK 同样生效。
+
+volumes:
+  # 数据卷：make down 不会删它，数据保留。
+  # 想让 init SQL 重新执行（改了 01-init.sql 之后），必须：
+  #   docker compose -f deploy/docker-compose.yml down -v
+  # 这会删掉整个数据库数据，谨慎使用。
+  pgdata:

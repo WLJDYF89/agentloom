@@ -7,11 +7,13 @@
 #   powershell -ExecutionPolicy Bypass -File make.ps1 lint
 #   powershell -ExecutionPolicy Bypass -File make.ps1 test
 #   powershell -ExecutionPolicy Bypass -File make.ps1 check
+#   powershell -ExecutionPolicy Bypass -File make.ps1 up
 #
-# 更短的写法见同目录 make.cmd：make lint / make test / make check
+# 更短的写法见同目录 make.cmd：make lint / make test / make up
 #
 # 注意：本文件必须以 UTF-8 with BOM 保存。Windows PowerShell 5.1 在没有 BOM
 # 时按当前 ANSI 代码页解析脚本，中文注释会被解成乱码进而引发语法错误。
+# 改完本文件请复核首字节：`Format-Hex make.ps1 -Count 3` 应为 EF BB BF。
 
 [CmdletBinding()]
 param(
@@ -27,6 +29,7 @@ $RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Backend = Join-Path $RepoRoot 'backend'
 $VenvDir = Join-Path $Backend '.venv'
 $VenvPy = Join-Path $VenvDir 'Scripts\python.exe'
+$ComposeFile = 'deploy/docker-compose.yml'
 
 function Write-Step([string]$Message) {
     Write-Host "> $Message" -ForegroundColor Cyan
@@ -61,6 +64,29 @@ function Invoke-Py {
         }
     }
     finally { Pop-Location }
+}
+
+# 统一的 docker 调用出口：检查命令存在、定位到仓库根、检查退出码。
+# 所有 compose 操作都从这里走，避免每处各写一遍参数与错误处理。
+function Invoke-Docker {
+    param([string[]]$Arguments)
+    $docker = Get-Command docker -ErrorAction SilentlyContinue
+    if (-not $docker) {
+        throw '找不到 docker 命令。请确认 Docker Desktop 已安装并在 PATH 中'
+    }
+    Push-Location $RepoRoot
+    try {
+        & $docker.Source @Arguments
+        if ($LASTEXITCODE -ne 0) {
+            throw "命令失败（exit $LASTEXITCODE）：docker $($Arguments -join ' ')"
+        }
+    }
+    finally { Pop-Location }
+}
+
+function Invoke-Compose {
+    param([string[]]$Arguments)
+    Invoke-Docker (@('compose', '-f', $ComposeFile) + $Arguments)
 }
 
 function Task-Venv {
@@ -117,6 +143,44 @@ function Task-TestCov {
     Invoke-Py @('-m', 'pytest', '--cov=app', '--cov-report=term-missing')
 }
 
+# ---- Docker Compose ----
+# 这些目标故意不进 check 的依赖链：CI 环境通常没有 Docker 守护进程，
+# 放进去会让 make check 无辜失败。
+
+function Get-HealthUrl {
+    $port = if ($env:BACKEND_PORT) { $env:BACKEND_PORT } else { '8000' }
+    return "http://localhost:$port/health"
+}
+
+function Task-Up {
+    Write-Step '启动全栈并等待健康检查通过'
+    # --wait 是关键：不加它 up -d 会立刻返回 0，哪怕容器两秒后就崩了。
+    # 加了它，命令返回 0 就等于所有 healthcheck 都过了。
+    Invoke-Compose @('up', '-d', '--wait')
+    Write-Host "全栈就绪：$(Get-HealthUrl)" -ForegroundColor Green
+}
+
+function Task-UpBuild {
+    Write-Step '重建镜像后启动全栈（等待健康）'
+    Invoke-Compose @('up', '-d', '--build', '--wait')
+    Write-Host "全栈就绪（已重建镜像）：$(Get-HealthUrl)" -ForegroundColor Green
+}
+
+function Task-Down {
+    Write-Step '停止容器（保留数据卷）'
+    Invoke-Compose @('down')
+    Write-Host '已停止' -ForegroundColor Green
+}
+
+function Task-Logs {
+    Write-Step '跟随日志（Ctrl+C 退出）'
+    Invoke-Compose @('logs', '-f')
+}
+
+function Task-Ps {
+    Invoke-Compose @('ps')
+}
+
 function Task-Clean {
     Write-Step '清理缓存'
     foreach ($p in @('.pytest_cache', '.mypy_cache', '.ruff_cache', '.coverage', 'htmlcov')) {
@@ -140,6 +204,11 @@ function Show-Help {
   test-cov    跑测试 + 覆盖率
   check       lint + typecheck + test
   run         本地启动开发服务器
+  up          起全栈（postgres + backend）并等到健康
+  up-build    重建镜像后再起
+  down        停容器（保留数据卷）
+  logs        跟随全栈日志
+  ps          查看容器与健康状态
   clean       清理缓存产物
 '@ | Write-Host
 }
@@ -168,6 +237,11 @@ switch ($Target) {
         Write-Step '启动开发服务器'
         Invoke-Py @('-m', 'app')
     }
+    'up' { Task-Up }
+    'up-build' { Task-UpBuild }
+    'down' { Task-Down }
+    'logs' { Task-Logs }
+    'ps' { Task-Ps }
     'clean' { Task-Clean }
     default {
         Write-Host "未知目标：$Target。运行 make help 查看可用目标。" -ForegroundColor Red

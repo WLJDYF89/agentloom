@@ -56,10 +56,10 @@ agentloom/
 │   │   ├── core/     配置、错误码、日志、trace_id —— 不依赖任何业务
 │   │   ├── api/      路由层，只做协议转换
 │   │   └── main.py   应用装配：中间件、异常处理、生命周期
-│   ├── tests/
+│   ├── Dockerfile    镜像定义（放在这里，让 build context 与它同目录）
 │   └── pyproject.toml  依赖 / ruff / mypy / pytest 全部集中在这里
 ├── frontend/         Vue3 控制台（A08 起）
-├── deploy/           Docker Compose 与镜像定义（A02 起）
+├── deploy/           Docker Compose 编排与 PostgreSQL 初始化 SQL
 ├── docs/             排期表、事件模型、设计文档
 ├── scripts/          运维 / 数据生成 / 故障注入脚本
 ├── Makefile          标准入口（Linux / macOS / CI / 容器内）
@@ -93,7 +93,7 @@ make test
 ```
 
 两个入口的目标必须保持一一对应：`setup / venv / deps / lint / format / typecheck /
-test / test-cov / check / run / clean`。
+test / test-cov / check / run / up / up-build / down / logs / ps / clean`。
 
 ### 直接跑服务
 
@@ -103,6 +103,21 @@ curl http://127.0.0.1:8000/health
 ```
 
 OpenAPI 文档在 <http://127.0.0.1:8000/docs>。
+
+### 起全栈（Docker）
+
+```sh
+make up           # postgres:16 + backend，等到两者都 healthy 才返回
+curl http://localhost:8000/health
+make ps           # 看容器与健康状态
+make down         # 停容器，保留数据卷
+```
+
+`make up` 内部是 `docker compose -f deploy/docker-compose.yml up -d --wait`。**`--wait` 是
+这条验收标准的关键**：不加它 `up -d` 会立刻返回 0，哪怕容器两秒后就崩了；加了它，命令
+返回 0 就等于所有 healthcheck 都通过了。改了 Dockerfile 或依赖后改用 `make up-build`。
+
+端口、初始化 SQL 的执行时机、两份数据库地址的区别，见 [deploy/README.md](deploy/README.md)。
 
 ---
 
@@ -131,7 +146,7 @@ OpenAPI 文档在 <http://127.0.0.1:8000/docs>。
 
 | 阶段 | 内容 | 状态 |
 | --- | --- | --- |
-| P0 | 环境与骨架（A01 仓库结构 + 工具链） | 进行中 |
+| P0 | 环境与骨架（A01 仓库结构 + 工具链 · A02 Docker Compose 全栈） | 已完成 |
 | P1 | 事件模型与持久化 | 待开始 |
 | … | 详见 [docs/排期表_A_agentloom.xlsx](docs/排期表_A_agentloom.xlsx) | |
 

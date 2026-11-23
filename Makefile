@@ -11,7 +11,10 @@ VENV         := $(BACKEND)/.venv
 PY           := $(VENV)/bin/python
 PIP          := $(VENV)/bin/pip
 
-.PHONY: help setup venv deps lint format typecheck test test-cov check run clean docker-up docker-down
+COMPOSE      := docker compose -f deploy/docker-compose.yml
+
+.PHONY: help setup venv deps lint format typecheck test test-cov check run clean \
+        up down logs ps up-build
 
 help: ## 显示可用目标
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -49,11 +52,26 @@ check: lint typecheck test ## 提交前全量检查
 run: ## 本地启动开发服务器
 	@cd $(BACKEND) && .venv/bin/python -m app
 
-docker-up: ## 起 postgres + 应用（A02 提供）
-	@docker compose -f deploy/docker-compose.yml up -d
+# ---- Docker Compose 全栈 ----
+# 注意：这些目标故意不进 check 的依赖链 —— CI 环境通常没有 Docker 守护进程，
+# 放进去会让 `make check` 无辜失败。
 
-docker-down: ## 停容器
-	@docker compose -f deploy/docker-compose.yml down
+up: ## 起全栈（postgres + backend）并等到健康
+	@$(COMPOSE) up -d --wait
+	@echo "✓ 全栈就绪：http://localhost:$${BACKEND_PORT:-8000}/health"
+
+up-build: ## 重新构建镜像后再起（改过 Dockerfile 或依赖时用）
+	@$(COMPOSE) up -d --build --wait
+	@echo "✓ 全栈就绪（已重建镜像）"
+
+down: ## 停容器（保留数据卷）
+	@$(COMPOSE) down
+
+logs: ## 跟随全栈日志
+	@$(COMPOSE) logs -f
+
+ps: ## 查看容器与健康状态
+	@$(COMPOSE) ps
 
 clean: ## 清理缓存产物
 	@rm -rf $(BACKEND)/.pytest_cache $(BACKEND)/.mypy_cache $(BACKEND)/.ruff_cache
