@@ -1,21 +1,4 @@
-"""把任务的完成状态写进排期表「任务明细」。
-
-进度看板全部由公式驱动（COUNTIF / COUNTIFS / SUMIF / SUMIFS），
-唯一需要人工维护的就是「任务明细」的 M 列（状态）。本脚本只改这一列，
-不碰任何公式、条件格式、数据验证，所以改完直接重算即可。
-
-用法（在仓库根目录）：
-
-    python scripts/set_task_status.py A01=已完成 A02=已完成
-    python scripts/set_task_status.py A03=进行中
-    python scripts/set_task_status.py --list          # 看所有任务与当前状态
-
-合法状态：未开始 / 进行中 / 已完成 / 已延期 / 已砍
-（与表里的下拉选项一致，写错会被拒绝，避免污染条件格式）
-
-改完记得让 Excel/WPS 重算一次，「进度看板」才会显示新数字；
-或者用 office_recalculate 这类工具刷新缓存值。
-"""
+"""改排期表「任务明细」的状态列（M）。用法见 scripts/README.md。"""
 
 from __future__ import annotations
 
@@ -26,13 +9,12 @@ from pathlib import Path
 from openpyxl import load_workbook
 
 DEFAULT_PATH = Path(__file__).resolve().parent.parent / "docs" / "排期表_A_agentloom.xlsx"
-STATUS_COL = 13  # M
+STATUS_COL = 13
 VALID = {"未开始", "进行中", "已完成", "已延期", "已砍"}
 FIRST_DATA_ROW = 4
 
 
 def collect_rows(ws) -> dict[str, int]:
-    """任务 ID -> 行号。按 ID 定位而不是硬编码行号，插入任务时不会错位。"""
     rows: dict[str, int] = {}
     for r in range(FIRST_DATA_ROW, ws.max_row + 1):
         tid = ws.cell(row=r, column=1).value
@@ -69,7 +51,7 @@ def main(argv: list[str]) -> int:
         parser.print_help()
         return 2
 
-    # 先全部校验，再统一写入——避免改了一半才发现有非法值。
+    # 先校验后写入，避免改到一半才发现有非法值。
     updates: list[tuple[str, int, str, str]] = []
     errors: list[str] = []
     for item in args.changes:
@@ -104,8 +86,7 @@ def main(argv: list[str]) -> int:
         print(f"[dry-run] 共 {len(updates)} 处改动，未写盘")
         return 0
 
-    # 没有实际改动就不写盘：避免无意义地重写 xlsx（会改变文件时间戳，
-    # 也会让 git 把它误判成有修改）。
+    # 无实际改动就别保存，否则会白白改写文件字节。
     if not updates:
         return 0
 
