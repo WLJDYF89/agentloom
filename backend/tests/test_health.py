@@ -51,3 +51,15 @@ def test_openapi_is_served(client: TestClient) -> None:
     schema = response.json()
     assert schema["info"]["title"] == "agentloom"
     assert "/health" in schema["paths"]
+
+
+def test_module_level_asgi_app_exists() -> None:
+    """`uvicorn app.main:app` 必须能导入到实例。
+
+    这行曾经漏过：只有 ``create_app()`` 没有模块级 ``app``，uvicorn 启动后
+    报 "Attribute app not found in module app.main"，而单测全绿——
+    因为测试自己调的是工厂函数。这里把它钉死。
+    """
+    from app.main import app as asgi_app
+
+    assert asgi_app.title == "agentloom"
