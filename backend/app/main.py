@@ -16,6 +16,7 @@ from app.core.logging import (
     reset_trace_id,
     set_trace_id,
 )
+from app.db.pool import Database
 
 _LOG = logging.getLogger(__name__)
 
@@ -33,8 +34,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.version,
         settings.environment,
     )
-    yield
-    _LOG.info("关闭 %s", settings.app_name)
+    db = Database(settings)
+    app.state.db = db
+    if settings.db_pool_autostart:
+        await db.connect()
+    try:
+        yield
+    finally:
+        await db.close()
+        _LOG.info("关闭 %s", settings.app_name)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:

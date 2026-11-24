@@ -52,6 +52,8 @@ deploy/
 └── README.md
 ```
 
+表结构与迁移不在这里，在 `backend/migrations/`。
+
 ## 端口
 
 | 服务 | 宿主机 | 容器内 | 说明 |
@@ -86,32 +88,32 @@ docker compose -f deploy/docker-compose.yml down -v
 make up
 ```
 
-`down -v` 会**删掉整个数据库数据**。等 A06 之后有真实事件数据了，这个操作就得慎用——
-那时正确的做法是写迁移脚本，而不是改 init SQL。
+`down -v` 会**删掉整个数据库数据**。
 
-后续脚本按编号追加，镜像会按字典序自动执行：
+## 表结构只有一条正规路径：迁移
 
-- `02-events.sql` ← A05 events 表（`run_id + seq` 唯一约束）
-- `03-idempotency.sql` ← A19 幂等键去重表
-- `04-snapshots.sql` ← A08 快照表
+`init/` 里那几份 SQL 不是迁移机制，它只做「容器第一次起来时确认库能连、时区对」这件事。
+**表结构的唯一真相来源是 Alembic 迁移**，在 `backend/migrations/versions/` 下，
+DDL 本身写在 `backend/app/db/ddl.py`（迁移脚本和测试都从那里取，避免手抄漂移）。
 
-**待定**：A05/A08/A19 的表如果同时用 Python 侧建表（SQLAlchemy / Alembic），
-两边会打架。届时必须选一处作为唯一真相来源——要么 SQL 全在 `init/` 和迁移里，
-要么全交给 ORM。现在先空着，不要两边都写。
+```powershell
+make migrate           # 迁移到最新
+make migrate-down      # 回退一个版本
+make migrate-history   # 看历史与当前版本
+```
 
-## 当前阶段说明（A02）
+为什么不让 `init/` 承担建表：等 A09 之后有测试数据、A26 之后有真实运行记录，
+每次加表都要 `down -v` 才能让新 SQL 生效，那等于**每次都毁掉全部数据**。
+迁移就不一样，`upgrade head` 只跑没跑过的那几个版本，数据不动。
 
-A02 阶段 backend 容器**其实还没连数据库**：`backend/pyproject.toml` 的运行依赖只有
-fastapi / uvicorn / pydantic / pydantic-settings，没有 `asyncpg`；`app/main.py` 的
-lifespan 里也没有连接池。数据库要到 **A05** 才真正接上。
+## 当前阶段说明（A05）
 
-那为什么现在就加 `depends_on: postgres: condition: service_healthy`？
+A02 时 backend 容器不连库；**A05 起真连了**：`app/main.py` 的 lifespan 里建 asyncpg
+连接池（`app/db/pool.py`），`settings.db_pool_autostart` 为真时启动就连。
+所以现在 backend 容器如果连不上 postgres，`/ready` 会返回 503。
 
-1. 为 A05 铺路，届时不用再改编排；
-2. 现在加上，意味着 `make up` 通过 = postgres 镜像本身也验证过了，省得 A05 才发现镜像有问题。
-
-`/health` 是**存活探针**，只证明进程活着，查询下游不应答是设计如此。
-就绪探针 `/ready`（查数据库连通性）在 A05 另加，两者不混。
+`/health` 仍是**存活探针**，只证明进程活着，不查下游；查库的是 `/ready`。
+两者不能合并：合并之后数据库抖一下，编排层就会把好进程重启掉。
 
 ## 健康检查
 
@@ -125,9 +127,10 @@ lifespan 里也没有连接池。数据库要到 **A05** 才真正接上。
 
 ## 已知限制
 
-- **只在首次启动执行 init SQL**，见上节。
+- **只在首次启动执行 init SQL**，见上节；建表走迁移。
 - **没有源码热重载**：镜像里 COPY 的是构建时的代码，改了 Python 代码要 `make up-build`
   才生效。绑定挂载 + `--reload` 留到开发体验真正成为瓶颈时再加。
+- **迁移不会随容器启动自动跑**：容器起来只连库不建表，要手动（或 CI 里）先 `make migrate`。
 - **镜像源写死在 Dockerfile 里**（清华源），可用 `--build-arg PIP_INDEX_URL=...` 覆盖。
 - **数据卷不绑定宿主机路径**：Windows 下把目录绑到 `/var/lib/postgresql/data`
   会因权限与大小写不敏感导致 initdb 失败，这是经典坑，所以用命名卷。

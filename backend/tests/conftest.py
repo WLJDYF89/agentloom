@@ -12,6 +12,8 @@ import pytest
 # 不会把测试带偏。
 os.environ["AGENTLOOM_ENVIRONMENT"] = "test"
 os.environ["AGENTLOOM_LOG_LEVEL"] = "WARNING"
+# 单测不连库：连库的用例自己起 TestClient 前改这个开关（见 pg_settings）。
+os.environ["AGENTLOOM_DB_POOL_AUTOSTART"] = "false"
 
 from app.core.config import Settings, get_settings
 from app.main import create_app

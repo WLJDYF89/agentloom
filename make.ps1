@@ -181,6 +181,26 @@ function Task-Ps {
     Invoke-Compose @('ps')
 }
 
+# ---- 数据库迁移 ----
+# 迁移才是正规路径：deploy/postgres/init/ 下的 SQL 只在空数据卷的第一次启动跑一次。
+
+function Task-Migrate {
+    Write-Step '迁移到最新版本'
+    Invoke-Py @('-m', 'alembic', 'upgrade', 'head')
+    Write-Host '迁移完成' -ForegroundColor Green
+}
+
+function Task-MigrateDown {
+    Write-Step '回退一个版本'
+    Invoke-Py @('-m', 'alembic', 'downgrade', '-1')
+    Write-Host '已回退' -ForegroundColor Green
+}
+
+function Task-MigrateHistory {
+    Invoke-Py @('-m', 'alembic', 'history', '--verbose')
+    Invoke-Py @('-m', 'alembic', 'current')
+}
+
 function Task-Clean {
     Write-Step '清理缓存'
     foreach ($p in @('.pytest_cache', '.mypy_cache', '.ruff_cache', '.coverage', 'htmlcov')) {
@@ -209,6 +229,9 @@ function Show-Help {
   down        停容器（保留数据卷）
   logs        跟随全栈日志
   ps          查看容器与健康状态
+  migrate     数据库迁移到最新版本
+  migrate-down 回退一个版本
+  migrate-history 查看迁移历史与当前版本
   clean       清理缓存产物
 '@ | Write-Host
 }
@@ -242,6 +265,9 @@ switch ($Target) {
     'down' { Task-Down }
     'logs' { Task-Logs }
     'ps' { Task-Ps }
+    'migrate' { Task-Migrate }
+    'migrate-down' { Task-MigrateDown }
+    'migrate-history' { Task-MigrateHistory }
     'clean' { Task-Clean }
     default {
         Write-Host "未知目标：$Target。运行 make help 查看可用目标。" -ForegroundColor Red

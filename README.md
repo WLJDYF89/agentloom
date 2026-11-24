@@ -55,12 +55,14 @@ agentloom/
 │   ├── app/
 │   │   ├── core/     配置、错误码、日志、trace_id —— 不依赖任何业务
 │   │   ├── events/   六类事件 schema（A03）
+│   │   ├── db/       事件表：DDL 真相源、连接池、行映射（A05）
 │   │   ├── api/      路由层，只做协议转换
 │   │   │   ├── deps.py     共享依赖：Settings、trace_id、错误响应声明
 │   │   │   ├── handlers.py 异常处理器：AppError / 校验失败 / HTTP / 兜底
-│   │   │   ├── ops.py      运维接口 /health /version
+│   │   │   ├── ops.py      运维接口 /health /version /ready
 │   │   │   └── v1/         业务接口，一律挂 /api/v1 前缀
 │   │   └── main.py   应用装配：中间件、异常处理、生命周期
+│   ├── migrations/   Alembic 迁移（表结构的唯一正规路径）
 │   ├── Dockerfile    镜像定义（放在这里，让 build context 与它同目录）
 │   └── pyproject.toml  依赖 / ruff / mypy / pytest 全部集中在这里
 ├── frontend/         Vue3 控制台（A08 起）
@@ -98,7 +100,8 @@ make test
 ```
 
 两个入口的目标必须保持一一对应：`setup / venv / deps / lint / format / typecheck /
-test / test-cov / check / run / up / up-build / down / logs / ps / clean`。
+test / test-cov / check / run / up / up-build / down / logs / ps / migrate /
+migrate-down / migrate-history / clean`。
 
 ### 直接跑服务
 
@@ -123,6 +126,17 @@ make down         # 停容器，保留数据卷
 返回 0 就等于所有 healthcheck 都通过了。改了 Dockerfile 或依赖后改用 `make up-build`。
 
 端口、初始化 SQL 的执行时机、两份数据库地址的区别，见 [deploy/README.md](deploy/README.md)。
+
+### 数据库迁移
+
+```sh
+make migrate           # 迁移到最新版本
+make migrate-history   # 看历史与当前版本
+make migrate-down      # 回退一个版本
+```
+
+表结构由 Alembic 管理，`deploy/postgres/init/` 里的 SQL **不建业务表**（它只在空数据卷的
+第一次启动跑一次）。表结构、索引、为什么不用 ORM，见 [docs/storage.md](docs/storage.md)。
 
 ---
 
@@ -156,7 +170,7 @@ make down         # 停容器，保留数据卷
 | 阶段 | 内容 | 状态 |
 | --- | --- | --- |
 | P0 | 环境与骨架（A01 仓库结构 + 工具链 · A02 Docker Compose 全栈 · A03 事件 schema · A04 路由分层与错误处理） | 已完成 |
-| P1 | 事件模型与持久化 | 待开始 |
+| P1 | 事件模型与持久化（A05 events 表设计与迁移） | 进行中 |
 | … | 详见 [docs/排期表_A_agentloom.xlsx](docs/排期表_A_agentloom.xlsx) | |
 
 项目范围与边界、和 LangGraph / Temporal 的差异、待验证的指标口径，写在

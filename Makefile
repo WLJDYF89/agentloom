@@ -14,7 +14,7 @@ PIP          := $(VENV)/bin/pip
 COMPOSE      := docker compose -f deploy/docker-compose.yml
 
 .PHONY: help setup venv deps lint format typecheck test test-cov check run clean \
-        up down logs ps up-build
+        up down logs ps up-build migrate migrate-down migrate-history
 
 help: ## 显示可用目标
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -72,6 +72,19 @@ logs: ## 跟随全栈日志
 
 ps: ## 查看容器与健康状态
 	@$(COMPOSE) ps
+
+# ---- 数据库迁移 ----
+# 迁移才是正规路径：deploy/postgres/init/ 下的 SQL 只在空数据卷的第一次启动跑一次。
+
+migrate: ## 迁移到最新版本
+	@cd $(BACKEND) && .venv/bin/python -m alembic upgrade head
+
+migrate-down: ## 回退一个版本
+	@cd $(BACKEND) && .venv/bin/python -m alembic downgrade -1
+
+migrate-history: ## 查看迁移历史与当前版本
+	@cd $(BACKEND) && .venv/bin/python -m alembic history --verbose
+	@cd $(BACKEND) && .venv/bin/python -m alembic current
 
 clean: ## 清理缓存产物
 	@rm -rf $(BACKEND)/.pytest_cache $(BACKEND)/.mypy_cache $(BACKEND)/.ruff_cache

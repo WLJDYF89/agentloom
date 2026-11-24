@@ -40,10 +40,15 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = Field(default=8000, ge=1, le=65535)
 
-    # ---- 数据库（A05 起真正使用，这里先定契约）----
+    # ---- 数据库 ----
+    # 写成 SQLAlchemy 的 driver 形式，因为 Alembic 走它；直接给 asyncpg 用时去掉 +asyncpg。
     database_url: str = "postgresql+asyncpg://agentloom:agentloom@localhost:5432/agentloom"
+    db_pool_min_size: int = Field(default=1, ge=0, le=100)
     db_pool_size: int = Field(default=10, ge=1, le=200)
     db_pool_timeout_s: float = Field(default=5.0, gt=0)
+    db_command_timeout_s: float = Field(default=10.0, gt=0)
+    # 测试里关掉，避免每个 TestClient 都去连一次库
+    db_pool_autostart: bool = True
 
     # ---- 日志 ----
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
@@ -52,6 +57,11 @@ class Settings(BaseSettings):
     @property
     def is_prod(self) -> bool:
         return self.environment == "prod"
+
+    @property
+    def asyncpg_dsn(self) -> str:
+        """asyncpg 只认 ``postgresql://``，不认 SQLAlchemy 的 ``+asyncpg``。"""
+        return self.database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
 
 
 @lru_cache(maxsize=1)
